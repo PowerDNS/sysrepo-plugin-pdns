@@ -1,0 +1,3 @@
+[submodule "dns-server-yang"]
+	path = dns-server-yang
+	url = https://gitlab.labs.nic.cz/labs/dns-server-yang.git
