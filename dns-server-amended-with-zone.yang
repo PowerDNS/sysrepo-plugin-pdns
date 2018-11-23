@@ -1,8 +1,8 @@
-module dns-server {
+module dns-server-amended-with-zone {
 
   yang-version "1.1";
 
-  namespace "http://www.nic.cz/ns/yang/dns-server";
+  namespace "http://www.nic.cz/ns/yang/dns-server-amended-with-zone";
 
   prefix "dnss";
 
@@ -20,6 +20,10 @@ module dns-server {
 
   import tsig-algorithms {
     prefix "tsig";
+  }
+
+  import iana-dns-class-rr-type {
+    prefix "dnsct";
   }
 
   organization
@@ -152,6 +156,36 @@ module dns-server {
     }
     description
       "This type is used for referring to a configured zone.";
+  }
+
+  typedef rr {
+    type union {
+      type string;
+      type binary;
+    }
+    description
+      "This type defines a Resource Record, it only has a value for the rr, as
+      it is encapsulated in and rr-set";
+  }
+
+  grouping rr-set {
+    description
+      "This type defines a Resource Record Set";
+    leaf name {
+      type inet:domain-name;
+    }
+    leaf ttl {
+      type rr-ttl;
+    }
+    leaf class {
+      type dnsct:dns-class;
+    }
+    leaf type {
+      type dnsct:rr-type;
+    }
+    leaf-list rrs {
+      type rr;
+    }
   }
 
   /* Groupings */
