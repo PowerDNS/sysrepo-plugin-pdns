@@ -1,3 +1,6 @@
 [submodule "dns-server-yang"]
 	path = dns-server-yang
 	url = https://gitlab.labs.nic.cz/labs/dns-server-yang.git
+[submodule "jetconf-knot"]
+	path = jetconf-knot
+	url = https://gitlab.labs.nic.cz/jetconf/jetconf-knot.git
