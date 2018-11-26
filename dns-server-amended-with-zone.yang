@@ -26,6 +26,10 @@ module dns-server-amended-with-zone {
     prefix "dnsct";
   }
 
+  import dns-zone-common {
+    prefix "dnszc";
+  }
+
   organization
     "CZ.NIC, z. s. p. o.";
 
@@ -174,17 +178,18 @@ module dns-server-amended-with-zone {
     leaf name {
       type inet:domain-name;
     }
-    leaf ttl {
-      type rr-ttl;
-    }
-    leaf class {
-      type dnsct:dns-class;
-    }
     leaf type {
       type dnsct:rr-type;
     }
-    leaf-list rrs {
-      type rr;
+    leaf ttl {
+      type rr-ttl;
+    }
+    // class is already encoded in the zone object
+    // leaf class {
+    //  type dnsct:dns-class;
+    // }
+    list rrs {
+      uses dnszc:common-rr-data;
     }
   }
 
@@ -318,6 +323,11 @@ module dns-server-amended-with-zone {
         mandatory "true";
         description
           "Zone's SOA serial number.";
+      }
+      list resource-records {
+        description "Resource records in this zone";
+        uses rr-set;
+        key "name type";
       }
       container statistics {
         description
