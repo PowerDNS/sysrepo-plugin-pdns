@@ -1,0 +1,45 @@
+module pdns-dns {
+
+  yang-version "1.1";
+
+  namespace "http://powerdns.com/ns/yang/pdns-dns";
+
+  prefix "pdns";
+
+  import ietf-inet-types {
+    prefix "inet";
+  }
+
+  import ietf-yang-types {
+    prefix "yang";
+  }
+
+  import ietf-netconf-acm {
+    prefix "nacm";
+  }
+
+  import dns-server {
+    prefix "dnss";
+  }
+
+  organization
+    "PowerDNS.COM BV";
+
+  contact
+    "Editor: Pieter Lexis
+             <mailto:pieter.lexis@powerdns.com>";
+
+  description
+    "This YANG module augments the 'dns-server' module with
+     parameters specific for the PowerDNS Authoritative Server.";
+
+  reference
+    "https://doc.powerdns.com/authoritative";
+
+  revision 2018-11-23 {
+    description
+      "Initial revision.";
+    reference
+      "None yet";
+  }
+}
