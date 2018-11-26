@@ -2,6 +2,11 @@
 
 This repository contains several YANG models and a plugin for sysrepo to use these models to modify zones and records.
 
+## State of the repository
+
+This repository is mostly for collecting all YANG related work in one place.
+All code and models will be under heavy development and the repository will probably be split up, renamed or removed in the future.
+
 ## License
 * The plugin (in `pdns/`) is licensed under the [Apache License 2.0](https://opensource.org/licenses/Apache-2.0) (the same as sysrepo is under).
 * The `pdns.yang` model file is licensed under the Apache License 2.0 and the [GNU General Public License version 2](https://opensource.org/licenses/GPL-2.0)
