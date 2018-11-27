@@ -189,7 +189,7 @@ module dns-server-amended-with-zone {
     //  type dnsct:dns-class;
     // }
     list rrs {
-      uses dnszc:common-rr-data;
+      uses dnszc:rdata-fields;
     }
   }
 
