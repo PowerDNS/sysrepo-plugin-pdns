@@ -18,57 +18,40 @@ __license__ = "Apache 2.0"
 # limitations under the License.
 
 import sysrepo as sr
-import sys
 
 
-# Function to print current configuration state.
-# It does so by loading all the items of a session and printing them out.
-def print_current_config(session, module_name):
-    select_xpath = "/" + module_name + ":*//*"
-
-    values = session.get_items(select_xpath)
-
-    for i in range(values.val_cnt()):
-        print (values.val(i).to_string(),end='')
-
-
-# Function to be called for subscribed client of given session whenever configuration changes.
-def module_change_cb(sess, module_name, event, private_ctx):
-    print("\n\n ========== CONFIG HAS CHANGED, CURRENT RUNNING CONFIG: ==========\n")
-
-    print_current_config(sess, module_name)
-
+# virtual int sysrepo::Callback::dp_get_items 	( 	const char *  	xpath,
+#		S_Vals_Holder  	vals,
+#		uint64_t  	request_id,
+#		const char *  	original_xpath,
+#		void *  	private_ctx
+#	)
+# https://www.sysrepo.org/static/doc/html/classsysrepo_1_1Callback.html#aad2f1e586510395c8af20ec1dee32ec4
+def module_get_cb(xpath, vals, reqid, origxpath, ctx):
+    print('hello')
     return sr.SR_ERR_OK
 
 
 def main():
-    # Notable difference between c implementation is using exception mechanism for open handling unexpected events.
-    # Here it is useful because `Conenction`, `Session` and `Subscribe` could throw an exception.
     try:
-        module_name = "ietf-interfaces"
-        if len(sys.argv) > 1:
-            module_name = sys.argv[1]
-        else:
-            print("\nYou can pass the module name to be subscribed as the first argument")
+        module_name = "dns-server-amended-with-zone"
 
         # connect to sysrepo
-        conn = sr.Connection("example_application")
+        conn = sr.Connection("pdns")
 
         # start session
         sess = sr.Session(conn)
 
-        # subscribe for changes in running config */
+        # Subscribe to state get events
         subscribe = sr.Subscribe(sess)
 
-        subscribe.module_change_subscribe(module_name, module_change_cb, None, 0, sr.SR_SUBSCR_DEFAULT | sr.SR_SUBSCR_APPLY_ONLY)
-
-        print("\n\n ========== READING STARTUP CONFIG: ==========\n")
-        try:
-            print_current_config(sess, module_name)
-        except Exception as e:
-            print(e)
-
-        print("\n\n ========== STARTUP CONFIG APPLIED AS RUNNING ==========\n")
+        # void sysrepo::Subscribe::dp_get_items_subscribe 	( 	const char *  	xpath,
+		# S_Callback  	callback,
+		# void *  	private_ctx = nullptr,
+		# sr_subscr_options_t  	opts = SUBSCR_DEFAULT
+        # )
+        # https://www.sysrepo.org/static/doc/html/classsysrepo_1_1Subscribe.html#af3d53b9e45eb1ed77724c6d4c7a6dffa
+        subscribe.dp_get_items_subscribe("/" + module_name + ":*//*", module_get_cb)
 
         sr.global_loop()
 
@@ -76,6 +59,7 @@ def main():
 
     except Exception as e:
         print(e)
+        raise # show me the whole trace
 
 
 if __name__ == "__main__":
