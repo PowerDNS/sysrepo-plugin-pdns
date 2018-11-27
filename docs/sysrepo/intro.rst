@@ -7,3 +7,4 @@ sysrepo
    :maxdepth: 2
 
    design
+   devenv
