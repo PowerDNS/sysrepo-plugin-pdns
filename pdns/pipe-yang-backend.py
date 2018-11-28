@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import print_function
 
 __author__ = "Pieter Lexis <pieter.lexis@powerdns.com"
 __copyright__ = "Copyright 2018, PowerDNS.COM BV"
@@ -20,10 +19,10 @@ __license__ = "Apache 2.0"
 import sysrepo as sr
 import logging
 import sys
-from typing import List
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
+
 
 class YANGBackend:
     module_name = 'dns-server-amended-with-zone'

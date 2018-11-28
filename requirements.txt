@@ -1,1 +1,0 @@
-git+https://github.com/pieterlexis/pdns_api_client-py.git
