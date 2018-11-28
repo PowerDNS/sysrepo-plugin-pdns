@@ -172,27 +172,6 @@ module dns-server-amended-with-zone {
       it is encapsulated in and rr-set";
   }
 
-  grouping rr-set {
-    description
-      "This type defines a Resource Record Set";
-    leaf name {
-      type inet:domain-name;
-    }
-    leaf type {
-      type dnsct:rr-type;
-    }
-    leaf ttl {
-      type rr-ttl;
-    }
-    // class is already encoded in the zone object
-    // leaf class {
-    //  type dnsct:dns-class;
-    // }
-    list rrs {
-      uses dnszc:rdata-fields;
-    }
-  }
-
   /* Groupings */
 
   grouping counter64 {
@@ -871,17 +850,29 @@ module dns-server-amended-with-zone {
           description
             "Zone name.";
         }
-        list resource-records {
-          description "Resource records in this zone";
-          uses rr-set;
-          key "name type";
-        }
         leaf template {
           type leafref {
             path "/dns-server/zones/template/name";
           }
           description
             "Reference to a configured zone template.";
+        }
+        list rrset {
+          key "owner type";
+          description
+            "RRSet";
+          uses dnszc:owner-field;
+          leaf ttl {
+            type uint32;
+            mandatory "true";
+            description "Time-To-Live of the RR.";
+          }
+          leaf type {
+            type dnsct:rr-type;
+          }
+          leaf-list rdata {
+            type "string";
+          }
         }
         uses zone-options;
       }
