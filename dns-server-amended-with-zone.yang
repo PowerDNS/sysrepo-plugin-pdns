@@ -324,11 +324,6 @@ module dns-server-amended-with-zone {
         description
           "Zone's SOA serial number.";
       }
-      list resource-records {
-        description "Resource records in this zone";
-        uses rr-set;
-        key "name type";
-      }
       container statistics {
         description
           "Zone statistics.";
@@ -875,6 +870,11 @@ module dns-server-amended-with-zone {
           type inet:domain-name;
           description
             "Zone name.";
+        }
+        list resource-records {
+          description "Resource records in this zone";
+          uses rr-set;
+          key "name type";
         }
         leaf template {
           type leafref {
