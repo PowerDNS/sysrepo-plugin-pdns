@@ -22,7 +22,22 @@ logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
 
 
-def change_cb(session, modname, event, ctx):
+def change_cb(session, modname, event, ctx) -> int:
+    """
+    This is called when data changes in the datastore.
+
+    TODO It should do all the record checking and return SR_ERR_OK only when the records are all ok
+
+    TODO Verify that on start-up, the running datastore has the data from the previous time this was run
+
+    Docs: https://www.sysrepo.org/static/doc/html/group__cl.html#gaea5e74efb61cba08762cbf6034546190
+
+    :param session:
+    :param modname:
+    :param event:
+    :param ctx:
+    :return:
+    """
     log.debug("change_cb called with:")
     log.debug("  session: %s", session)
     log.debug("  modname: %s", modname)
@@ -44,6 +59,9 @@ def main():
     session = sr.Session(conn)
     log.info("session started")
     sub = sr.Subscribe(session)
+
+    # module_change_subscribe API docs:
+    #   https://www.sysrepo.org/static/doc/html/group__cl.html#ga35341cf4bf9584127f7c5a79405a878f
     sub.module_change_subscribe(module_name, change_cb, None, sr.SR_SUBSCR_DEFAULT | sr.SR_SUBSCR_APPLY_ONLY)
     sr.global_loop()
 

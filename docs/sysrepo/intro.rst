@@ -1,7 +1,7 @@
 sysrepo
 =======
 
-.. todo:: Write about sysrepo
+``sysrepo`` is a YANG data store focused on UNIX applications.
 
 .. toctree::
    :maxdepth: 2
