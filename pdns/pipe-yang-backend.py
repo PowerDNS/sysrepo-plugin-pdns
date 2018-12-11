@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-__author__ = "Pieter Lexis <pieter.lexis@powerdns.com"
+__author__ = "Pieter Lexis <pieter.lexis@powerdns.com>, William Light <wrl@lhiaudio.com>"
 __copyright__ = "Copyright 2018, PowerDNS.COM BV"
 __license__ = "Apache 2.0"
 
@@ -20,7 +20,7 @@ import sysrepo as sr
 import logging
 import sys
 
-from typing import Union
+from typing import Union, List
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
@@ -89,10 +89,15 @@ class YANGBackend:
 
             qname = qname.lower()
 
-            if qtype in ['SOA', 'ANY']:
-                self.handle_soa(qname)
+            # FIXME: clarify list of record types
+            record_types = ['SOA', 'NS', 'TXT', 'A', 'CNAME', 'MX']
 
-            self.write_line("END")
+            if qtype is 'ANY':
+                self.handle_record_query(qname, qclass, record_types)
+            elif qtype in record_types:
+                self.handle_record_query(qname, qclass, [qtype])
+            else:
+                self.write_line("END")
 
     def write_line(self, line: str):
         """
@@ -160,24 +165,47 @@ class YANGBackend:
 
         return values
 
-    def handle_soa(self, qname) -> None:
+    def handle_record_query(self, qname: str, qclass: str, qtypes: List[str]) -> None:
         """
-        Retrieves the SOA for ``qname`` from the datastore and writes it to stdout
+        Retrieve DNS records from the datastore and write them to stdout using
+        the PowerDNS pipe ABI version 2. After writing all of the responses,
+        indicates to PowerDNS that there is no more data by writing "END".
 
-        :param str qname: The name to get the SOA for
+	If in doubt about the parameter types, please refer to the PowerDNS
+	pipe backend documentation at https://doc.powerdns.com/authoritative/backends/pipe.html
+
+        :param str qname: DNS resource name
+        :param str qclass: DNS class
+        :param List[str] qtypes: List of DNS record types to retrieve.
+            A separate XPath lookup will be performed for each record type.
         :return: None
         """
-        select_xpath = '{}["{}"]/{}/SOA'.format(self.zone_xpath, qname, qname)
 
-        values = self.get_config_data(select_xpath)
+        record_xpath = '{zone_xpath}["{qname}"]/{qname}'.format(
+                zone_xpath=self.zone_xpath,
+                qname=qname)
 
-        if values is None:
-            return
+        for qtype in qtypes:
+            select_xpath = '{record_xpath}/{qtype}'.format(
+                    record_xpath=record_xpath,
+                    qtype=qtype)
 
-        # TODO
-        # self.write_line('DATA\t{}\tIN\tSOA\t{}\t-1\t{}'.format(qname, ))
+            # FIXME: stub/mock for unit testing (this seems like the right
+            #        place to do it).
+            values = self.get_config_data(select_xpath)
+
+            for v in values:
+                response = 'DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                        qname=qname, qclass=qclass, qtype=qtype,
+                        ttl=3600, id=1, content=v)
+
+                # not using `self.write_line()` here to avoid flushing after
+                # every line. we'll do that when we write END.
+                sys.stdout.write(response)
+                sys.stdout.write('\n')
+
+        self.write_line("END")
         return
-
 
 def main():
     be = YANGBackend()
