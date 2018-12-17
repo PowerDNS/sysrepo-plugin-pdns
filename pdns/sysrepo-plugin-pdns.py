@@ -50,11 +50,13 @@ def change_cb(session, modname, event, ctx) -> int:
 def main():
     module_name = 'dns-server-amended-with-zone'
     log.debug("connecting to sysrepo")
+
     # connect to sysrepo
     conn = sr.Connection("pdns")
     log.info("connected to sysrepo")
 
     log.debug("starting session")
+
     # start session
     session = sr.Session(conn)
     log.info("session started")
@@ -62,7 +64,9 @@ def main():
 
     # module_change_subscribe API docs:
     #   https://www.sysrepo.org/static/doc/html/group__cl.html#ga35341cf4bf9584127f7c5a79405a878f
-    sub.module_change_subscribe(module_name, change_cb, None, sr.SR_SUBSCR_DEFAULT | sr.SR_SUBSCR_APPLY_ONLY)
+    sub.module_change_subscribe(module_name, change_cb, None,
+            sr.SR_SUBSCR_DEFAULT | sr.SR_SUBSCR_APPLY_ONLY)
+
     sr.global_loop()
 
 

@@ -90,9 +90,9 @@ class YANGBackend:
             qname = qname.lower()
 
             # FIXME: clarify list of record types
-            record_types = ['SOA', 'NS', 'TXT', 'A', 'CNAME', 'MX']
+            record_types = ["SOA", "NS", "A", "AAAA", "MX", "CNAME", "TXT"]
 
-            if qtype is 'ANY':
+            if qtype == "ANY":
                 self.handle_record_query(qname, qclass, record_types)
             elif qtype in record_types:
                 self.handle_record_query(qname, qclass, [qtype])
@@ -181,12 +181,14 @@ class YANGBackend:
         :return: None
         """
 
-        record_xpath = '{zone_xpath}["{qname}"]/{qname}'.format(
+        record_xpath = '{zone_xpath}[domain="{qname}"]'.format(
                 zone_xpath=self.zone_xpath,
                 qname=qname)
 
+        # FIXME: we can probably do this all in one XPath query if we're clever
+        #        about it
         for qtype in qtypes:
-            select_xpath = '{record_xpath}/{qtype}'.format(
+            select_xpath = '{record_xpath}/rrset[type="{qtype}"]/rdata[text()]'.format(
                     record_xpath=record_xpath,
                     qtype=qtype)
 
@@ -194,15 +196,18 @@ class YANGBackend:
             #        place to do it).
             values = self.get_config_data(select_xpath)
 
-            for v in values:
+            if not values:
+                continue
+
+            # FIXME: get TTL from rrset
+            for i in range(values.val_cnt()):
                 response = 'DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
                         qname=qname, qclass=qclass, qtype=qtype,
-                        ttl=3600, id=1, content=v)
+                        ttl=3600, id=-1, content=values.val(i).val_to_string())
 
                 # not using `self.write_line()` here to avoid flushing after
                 # every line. we'll do that when we write END.
                 sys.stdout.write(response)
-                sys.stdout.write('\n')
 
         self.write_line("END")
         return
