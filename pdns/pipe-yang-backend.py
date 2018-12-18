@@ -181,6 +181,12 @@ class YANGBackend:
         :return: None
         """
 
+        # FIXME: we should probably only do this when a change is made.
+        #        currently, we have a separate daemon that does that – can we
+        #        roll that into this backend? will that cause issues with the
+        #        data store updates?
+        self.session.refresh()
+
         record_xpath = '{zone_xpath}[domain="{qname}"]'.format(
                 zone_xpath=self.zone_xpath,
                 qname=qname)
