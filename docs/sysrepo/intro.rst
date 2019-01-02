@@ -8,3 +8,4 @@ sysrepo
 
    design
    devenv
+   xpath
