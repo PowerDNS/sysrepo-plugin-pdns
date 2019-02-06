@@ -171,8 +171,8 @@ class YANGBackend:
         the PowerDNS pipe ABI version 2. After writing all of the responses,
         indicates to PowerDNS that there is no more data by writing "END".
 
-	If in doubt about the parameter types, please refer to the PowerDNS
-	pipe backend documentation at https://doc.powerdns.com/authoritative/backends/pipe.html
+        If in doubt about the parameter types, please refer to the PowerDNS
+        pipe backend documentation at https://doc.powerdns.com/authoritative/backends/pipe.html
 
         :param str qname: DNS resource name
         :param str qclass: DNS class
