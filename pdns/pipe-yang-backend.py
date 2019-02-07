@@ -165,6 +165,27 @@ class YANGBackend:
 
         return values
 
+    def get_domain(self, qname: str) -> Union[None, str]:
+        """
+        Returns the domain name for the record at `qname`
+        """
+
+        # TODO create a domain_id and cache it?
+        domain = qname
+
+        while domain != '':
+            domain_xpath = '{zone_xpath}[domain="{domain}"]/rrset[type="SOA"]/rdata[text()]'.format(
+                zone_xpath=self.zone_xpath,
+                domain=domain)
+            vals = self.get_config_data(domain_xpath)
+
+            if vals:
+                return domain
+
+            domain = '.'.join(domain.split('.')[1:])
+
+        return None
+
     def handle_record_query(self, qname: str, qclass: str, qtypes: List[str]) -> None:
         """
         Retrieve DNS records from the datastore and write them to stdout using
@@ -187,9 +208,18 @@ class YANGBackend:
         #        data store updates?
         self.session.refresh()
 
-        record_xpath = '{zone_xpath}[domain="{qname}"]'.format(
+        domain = self.get_domain(qname)
+
+        if not domain:
+            self.write_line("END")
+            return
+
+        # TODO return the SOA from self.get_domain and send it to pdns when the
+        # qtype is SOA
+
+        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
                 zone_xpath=self.zone_xpath,
-                qname=qname)
+                domain=domain)
 
         # FIXME: we can probably do this all in one XPath query if we're clever
         #        about it
