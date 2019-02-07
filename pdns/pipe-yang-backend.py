@@ -34,6 +34,8 @@ pdns.conf should have lines similar to this:
 launch=pipe
 pipe-abi-version=2
 pipe-command=/path/to/pipe-yang-backend.py
+
+To support AXFR requests, set 'pipe-abi-version' to 4.
 """
 
 class YANGBackend:
