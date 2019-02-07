@@ -265,7 +265,7 @@ class YANGBackend:
 
     def handle_axfr_query(self, domain: str) -> None:
         """
-        Retrieves all DNS records for a zone
+        Retrieves all DNS records for a zone and sends them one by one to PowerDNS
 
         :param str domain: The name of the zone requested
         """
@@ -279,14 +279,18 @@ class YANGBackend:
                 domain=domain)
 
         tree = self.session.get_subtree(record_xpath)
-        
         rrsets = tree.first_child()
+
+        # Iterate over all nodes underneath the /zone node
         while rrsets:
             if rrsets.name() != 'rrset':
+                # ignore everything that is not an rrset node
                 rrsets = rrsets.next()
                 continue
 
             rrset = dict()
+
+            # Iterate over all children of the rrset in the tree
             rrset_val = rrsets.first_child()
             while rrset_val:
                 if rrset_val.name() in ['ttl']:
@@ -302,6 +306,7 @@ class YANGBackend:
                 rrset_val = rrset_val.next()
 
             for rdata in rrset['rdata']:
+                # Only ABI v4 supports AXFR, no need to send v2 lines
                 sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
                         qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
                         ttl=rrset['ttl'], id=-1, content=rdata))
