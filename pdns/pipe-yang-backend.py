@@ -82,6 +82,12 @@ class YANGBackend:
 
             request = line.split('\t')
 
+            if self.abi_version == 4 and len(request) == 3:
+                kind, zoneid, zonename = request
+                if kind == 'AXFR':
+                    self.handle_axfr_query(zonename)
+                    continue
+
             if (self.abi_version == 2 and len(request) != 7) or (self.abi_version == 4 and len(request) != 8):
                 log.warning("PowerDNS sent an unparsable line: %s", line)
                 self.write_line('FAIL')
@@ -256,6 +262,53 @@ class YANGBackend:
 
         self.write_line("END")
         return
+
+    def handle_axfr_query(self, domain: str) -> None:
+        """
+        Retrieves all DNS records for a zone
+
+        :param str domain: The name of the zone requested
+        """
+
+        if self.get_domain(domain) != domain:
+            self.write_line('FAIL')
+            return
+
+        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
+                zone_xpath=self.zone_xpath,
+                domain=domain)
+
+        tree = self.session.get_subtree(record_xpath)
+        
+        rrsets = tree.first_child()
+        while rrsets:
+            if rrsets.name() != 'rrset':
+                rrsets = rrsets.next()
+                continue
+
+            rrset = dict()
+            rrset_val = rrsets.first_child()
+            while rrset_val:
+                if rrset_val.name() in ['ttl']:
+                    rrset[rrset_val.name()] = rrset_val.data().get_uint32()
+                if rrset_val.name() in ['owner']:
+                    rrset[rrset_val.name()] = rrset_val.data().get_string()
+                if rrset_val.name() in ['type']:
+                    rrset[rrset_val.name()] = rrset_val.data().get_enum()
+                if rrset_val.name() in ['rdata']:
+                    if not rrset.get(rrset_val.name()):
+                        rrset[rrset_val.name()] = list()
+                    rrset[rrset_val.name()].append(rrset_val.data().get_string())
+                rrset_val = rrset_val.next()
+
+            for rdata in rrset['rdata']:
+                sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
+                        ttl=rrset['ttl'], id=-1, content=rdata))
+
+            rrsets = rrsets.next()
+
+        self.write_line('END')
 
 def main():
     be = YANGBackend()
