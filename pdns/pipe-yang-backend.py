@@ -165,14 +165,35 @@ class YANGBackend:
 
         return values
 
+    def get_domain(self, qname: str) -> Union[None, str]:
+        """
+        Returns the domain name for the record at `qname`
+        """
+
+        # TODO create a domain_id and cache it?
+        domain = qname
+
+        while domain != '':
+            domain_xpath = '{zone_xpath}[domain="{domain}"]/rrset[type="SOA"][owner="{domain}"]/rdata[text()]'.format(
+                zone_xpath=self.zone_xpath,
+                domain=domain)
+            vals = self.get_config_data(domain_xpath)
+
+            if vals:
+                return domain
+
+            domain = '.'.join(domain.split('.')[1:])
+
+        return None
+
     def handle_record_query(self, qname: str, qclass: str, qtypes: List[str]) -> None:
         """
         Retrieve DNS records from the datastore and write them to stdout using
         the PowerDNS pipe ABI version 2. After writing all of the responses,
         indicates to PowerDNS that there is no more data by writing "END".
 
-	If in doubt about the parameter types, please refer to the PowerDNS
-	pipe backend documentation at https://doc.powerdns.com/authoritative/backends/pipe.html
+        If in doubt about the parameter types, please refer to the PowerDNS
+        pipe backend documentation at https://doc.powerdns.com/authoritative/backends/pipe.html
 
         :param str qname: DNS resource name
         :param str qclass: DNS class
@@ -187,15 +208,25 @@ class YANGBackend:
         #        data store updates?
         self.session.refresh()
 
-        record_xpath = '{zone_xpath}[domain="{qname}"]'.format(
+        domain = self.get_domain(qname)
+
+        if not domain:
+            self.write_line("END")
+            return
+
+        # TODO return the SOA from self.get_domain and send it to pdns when the
+        # qtype is SOA
+
+        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
                 zone_xpath=self.zone_xpath,
-                qname=qname)
+                domain=domain)
 
         # FIXME: we can probably do this all in one XPath query if we're clever
         #        about it
         for qtype in qtypes:
-            select_xpath = '{record_xpath}/rrset[type="{qtype}"]/rdata[text()]'.format(
+            select_xpath = '{record_xpath}/rrset[type="{qtype}"][owner="{qname}"]/rdata[text()]'.format(
                     record_xpath=record_xpath,
+                    qname=qname,
                     qtype=qtype)
 
             # FIXME: stub/mock for unit testing (this seems like the right
