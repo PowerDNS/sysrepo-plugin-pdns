@@ -46,6 +46,8 @@ class YANGBackend:
     zones_xpath = '{}/zones'.format(root_xpath)
     zone_xpath = '{}/zone'.format(zones_xpath)
 
+    abi_version = 0
+
     def __init__(self):
         """
         Sets up a session to the sysrepo datastore
@@ -80,12 +82,12 @@ class YANGBackend:
 
             request = line.split('\t')
 
-            if len(request) != 7:
+            if (self.abi_version == 2 and len(request) != 7) or (self.abi_version == 4 and len(request) != 8):
                 log.warning("PowerDNS sent an unparsable line: %s", line)
                 self.write_line('FAIL')
                 continue
 
-            kind, qname, qclass, qtype, zoneid, remoteip, localip = request
+            kind, qname, qclass, qtype, zoneid, *ipinfo = request
 
             qname = qname.lower()
 
@@ -126,16 +128,17 @@ class YANGBackend:
         log.info('received HELO from PowerDNS: %s', line)
         try:
             _, version = line.split('\t')
+            self.abi_version = int(version)
         except ValueError as e:
             log.error('Malformed HELO message from PowerDNS: %s', line)
             log.debug(e)
             self.write_line('FAIL')
             sys.exit(1)
 
-        log.debug("Received HELO from PowerDNS with version %s", version)
+        log.debug("Received HELO from PowerDNS with version %s", self.abi_version)
 
-        if int(version) != 2:
-            log.error("Wrong pipe-abi-version received (%s), only 2 is supported", version)
+        if self.abi_version not in [2, 4]:
+            log.error("Wrong pipe-abi-version received (%s), only 2 and 4 are supported", self.abi_version)
             sys.exit(1)
 
         self.write_line('OK\tYANG backend ready')
@@ -238,13 +241,18 @@ class YANGBackend:
 
             # FIXME: get TTL from rrset
             for i in range(values.val_cnt()):
-                response = 'DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
-                        qname=qname, qclass=qclass, qtype=qtype,
-                        ttl=3600, id=-1, content=values.val(i).val_to_string())
-
                 # not using `self.write_line()` here to avoid flushing after
                 # every line. we'll do that when we write END.
-                sys.stdout.write(response)
+                if self.abi_version == 2:
+                    sys.stdout.write('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                            qname=qname, qclass=qclass, qtype=qtype,
+                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
+
+                if self.abi_version == 4:
+                    # TODO: figure out the auth field
+                    sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                            qname=qname, qclass=qclass, qtype=qtype,
+                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
 
         self.write_line("END")
         return
