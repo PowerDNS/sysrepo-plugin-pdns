@@ -34,6 +34,8 @@ pdns.conf should have lines similar to this:
 launch=pipe
 pipe-abi-version=2
 pipe-command=/path/to/pipe-yang-backend.py
+
+To support AXFR requests, set 'pipe-abi-version' to 4.
 """
 
 class YANGBackend:
@@ -45,6 +47,8 @@ class YANGBackend:
     root_xpath = '/{}:dns-server'.format(module_name)
     zones_xpath = '{}/zones'.format(root_xpath)
     zone_xpath = '{}/zone'.format(zones_xpath)
+
+    abi_version = 0
 
     def __init__(self):
         """
@@ -80,12 +84,18 @@ class YANGBackend:
 
             request = line.split('\t')
 
-            if len(request) != 7:
+            if self.abi_version == 4 and len(request) == 3:
+                kind, zoneid, zonename = request
+                if kind == 'AXFR':
+                    self.handle_axfr_query(zonename)
+                    continue
+
+            if (self.abi_version == 2 and len(request) != 7) or (self.abi_version == 4 and len(request) != 8):
                 log.warning("PowerDNS sent an unparsable line: %s", line)
                 self.write_line('FAIL')
                 continue
 
-            kind, qname, qclass, qtype, zoneid, remoteip, localip = request
+            kind, qname, qclass, qtype, zoneid, *ipinfo = request
 
             qname = qname.lower()
 
@@ -126,16 +136,17 @@ class YANGBackend:
         log.info('received HELO from PowerDNS: %s', line)
         try:
             _, version = line.split('\t')
+            self.abi_version = int(version)
         except ValueError as e:
             log.error('Malformed HELO message from PowerDNS: %s', line)
             log.debug(e)
             self.write_line('FAIL')
             sys.exit(1)
 
-        log.debug("Received HELO from PowerDNS with version %s", version)
+        log.debug("Received HELO from PowerDNS with version %s", self.abi_version)
 
-        if int(version) != 2:
-            log.error("Wrong pipe-abi-version received (%s), only 2 is supported", version)
+        if self.abi_version not in [2, 4]:
+            log.error("Wrong pipe-abi-version received (%s), only 2 and 4 are supported", self.abi_version)
             sys.exit(1)
 
         self.write_line('OK\tYANG backend ready')
@@ -238,16 +249,73 @@ class YANGBackend:
 
             # FIXME: get TTL from rrset
             for i in range(values.val_cnt()):
-                response = 'DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
-                        qname=qname, qclass=qclass, qtype=qtype,
-                        ttl=3600, id=-1, content=values.val(i).val_to_string())
-
                 # not using `self.write_line()` here to avoid flushing after
                 # every line. we'll do that when we write END.
-                sys.stdout.write(response)
+                if self.abi_version == 2:
+                    sys.stdout.write('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                            qname=qname, qclass=qclass, qtype=qtype,
+                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
+
+                if self.abi_version == 4:
+                    # TODO: figure out the auth field
+                    sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                            qname=qname, qclass=qclass, qtype=qtype,
+                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
 
         self.write_line("END")
         return
+
+    def handle_axfr_query(self, domain: str) -> None:
+        """
+        Retrieves all DNS records for a zone and sends them one by one to PowerDNS
+
+        :param str domain: The name of the zone requested
+        """
+
+        if self.get_domain(domain) != domain:
+            self.write_line('FAIL')
+            return
+
+        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
+                zone_xpath=self.zone_xpath,
+                domain=domain)
+
+        tree = self.session.get_subtree(record_xpath)
+        rrsets = tree.first_child()
+
+        # Iterate over all nodes underneath the /zone node
+        while rrsets:
+            if rrsets.name() != 'rrset':
+                # ignore everything that is not an rrset node
+                rrsets = rrsets.next()
+                continue
+
+            rrset = dict()
+
+            # Iterate over all children of the rrset in the tree
+            rrset_val = rrsets.first_child()
+            while rrset_val:
+                if rrset_val.name() in ['ttl']:
+                    rrset[rrset_val.name()] = rrset_val.data().get_uint32()
+                if rrset_val.name() in ['owner']:
+                    rrset[rrset_val.name()] = rrset_val.data().get_string()
+                if rrset_val.name() in ['type']:
+                    rrset[rrset_val.name()] = rrset_val.data().get_enum()
+                if rrset_val.name() in ['rdata']:
+                    if not rrset.get(rrset_val.name()):
+                        rrset[rrset_val.name()] = list()
+                    rrset[rrset_val.name()].append(rrset_val.data().get_string())
+                rrset_val = rrset_val.next()
+
+            for rdata in rrset['rdata']:
+                # Only ABI v4 supports AXFR, no need to send v2 lines
+                sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
+                        ttl=rrset['ttl'], id=-1, content=rdata))
+
+            rrsets = rrsets.next()
+
+        self.write_line('END')
 
 def main():
     be = YANGBackend()
