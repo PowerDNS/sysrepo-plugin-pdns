@@ -174,7 +174,7 @@ class YANGBackend:
         domain = qname
 
         while domain != '':
-            domain_xpath = '{zone_xpath}[domain="{domain}"]/rrset[type="SOA"]/rdata[text()]'.format(
+            domain_xpath = '{zone_xpath}[domain="{domain}"]/rrset[type="SOA"][owner="{domain}"]/rdata[text()]'.format(
                 zone_xpath=self.zone_xpath,
                 domain=domain)
             vals = self.get_config_data(domain_xpath)
@@ -224,8 +224,9 @@ class YANGBackend:
         # FIXME: we can probably do this all in one XPath query if we're clever
         #        about it
         for qtype in qtypes:
-            select_xpath = '{record_xpath}/rrset[type="{qtype}"]/rdata[text()]'.format(
+            select_xpath = '{record_xpath}/rrset[type="{qtype}"][owner="{qname}"]/rdata[text()]'.format(
                     record_xpath=record_xpath,
+                    qname=qname,
                     qtype=qtype)
 
             # FIXME: stub/mock for unit testing (this seems like the right
