@@ -283,7 +283,7 @@ class YANGBackend:
 
         trees = self.session.get_subtrees(record_xpath)  # type: sr.Trees
 
-        if trees.tree_cnt() == 0:
+        if not trees:
             self.write_line('END')
             return
 
