@@ -250,7 +250,6 @@ class YANGBackend:
         pipe backend documentation at https://doc.powerdns.com/authoritative/backends/pipe.html
 
         :param str qname: DNS resource name
-        :param str qclass: DNS class
         :param str qtype: The type of record to retrieve
         :return: None
         """
