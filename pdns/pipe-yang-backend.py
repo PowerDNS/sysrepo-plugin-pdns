@@ -183,6 +183,25 @@ class YANGBackend:
 
         return values
 
+    def get_subtrees(self, xpath: str) -> Optional[sr.Trees]:
+        log.info("Getting subtrees at '%s'", xpath)
+
+        try:
+            subtrees: sr.Trees = self.session.get_subtrees(xpath)
+        except RuntimeError as e:
+            log.warning("Could not retrieve subtrees for xpath '%s': %s", xpath, e)
+            return None
+
+        if log.level == logging.DEBUG:
+            if not subtrees:
+                log.debug('Path %s was empty', xpath)
+                return None
+            log.debug('Got these subtrees for %s', xpath)
+            for i in range(subtrees.tree_cnt()):
+                log.debug(subtrees.tree(i).to_string(3))
+
+            return subtrees
+
     def get_domain(self, qname: str) -> Union[None, str]:
         """
         Returns the domain name for the record at `qname`
@@ -298,7 +317,7 @@ class YANGBackend:
 
         log.debug('Attempting to get subtrees for: {}'.format(record_xpath))
 
-        trees = self.session.get_subtrees(record_xpath)  # type: sr.Trees
+        trees = self.get_subtrees(record_xpath)
         self.write_rrsets_from_trees(trees)
 
     def handle_axfr_query(self, domain: str) -> None:
@@ -316,7 +335,7 @@ class YANGBackend:
                 zone_xpath=self.zone_xpath,
                 domain=domain)
 
-        trees = self.session.get_subtrees(record_xpath)  # type: sr.Trees
+        trees = self.get_subtrees(record_xpath)
         self.write_rrsets_from_trees(trees)
 
 def main():
