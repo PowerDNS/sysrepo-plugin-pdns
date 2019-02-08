@@ -1,0 +1,16 @@
+[Unit]
+Description=Sysrepo/PowerDNS Update Agent
+After=sysrepod.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/sysrepo-plugin-pdns.py
+PIDFile=/var/run/sysrepo-plugin-pdns.pid
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=yes
+ProtectHome=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
