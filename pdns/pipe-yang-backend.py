@@ -109,7 +109,8 @@ class YANGBackend:
             else:
                 self.write_line("END")
 
-    def write_line(self, line: str, flush=True):
+    @staticmethod
+    def write_line(line: str, flush=True):
         """
         Writes ``line`` to stdout and flushes stdout when flush is True
 
