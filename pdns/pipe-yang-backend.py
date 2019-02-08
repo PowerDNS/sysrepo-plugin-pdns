@@ -113,6 +113,21 @@ class YANGBackend:
         if flush:
             sys.stdout.flush()
 
+    def write_rrset(self, rrset: dict, auth: int = 1) -> None:
+        for rdata in rrset['rdata']:
+            to_write = '{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
+                qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
+                ttl=rrset['ttl'], id=-1, content=rdata)
+            if self.abi_version == 4:
+                to_write = '{subnet_mask}\t{auth}\t{to_write}'.format(
+                    subnet_mask=0,
+                    auth=auth,
+                    to_write=to_write
+                )
+            self.write_line('DATA\t{to_write}'.format(
+                to_write=to_write
+            ))
+
     def handle_helo(self, line) -> None:
         """
         Handles the "HELO" sent by PowerDNS when it launches the backend
@@ -274,17 +289,7 @@ class YANGBackend:
 
         for i in range(trees.tree_cnt()):
             rrset = self.get_rrset_from_tree(trees.tree(i))
-
-            for rdata in rrset['rdata']:
-                if self.abi_version == 4:
-                    # TODO: figure out the auth field
-                    self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
-                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
-                        ttl=rrset['ttl'], id=-1, content=rdata), False)
-                if self.abi_version == 2:
-                    self.write_line('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
-                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
-                        ttl=rrset['ttl'], id=-1, content=rdata), False)
+            self.write_rrset(rrset)
 
         self.write_line("END")
 
@@ -330,12 +335,7 @@ class YANGBackend:
                     rrset[rrset_val.name()].append(rrset_val.data().get_string())
                 rrset_val = rrset_val.next()
 
-            for rdata in rrset['rdata']:
-                # Only ABI v4 supports AXFR, no need to send v2 lines
-                self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
-                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
-                        ttl=rrset['ttl'], id=-1, content=rdata), False)
-
+            self.write_rrset(rrset)
             rrsets = rrsets.next()
 
         self.write_line('END')
