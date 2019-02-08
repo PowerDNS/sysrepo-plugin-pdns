@@ -99,7 +99,7 @@ class YANGBackend:
 
             qname = qname.lower()
 
-            self.handle_record_query(qname, qclass, qtype)
+            self.handle_record_query(qname, qtype)
 
     @staticmethod
     def write_line(line: str, flush=True):
@@ -228,7 +228,7 @@ class YANGBackend:
 
         return ret
 
-    def handle_record_query(self, qname: str, qclass: str, qtype: str) -> None:
+    def handle_record_query(self, qname: str, qtype: str) -> None:
         """
         Retrieve DNS records from the datastore and write them to stdout using
         the PowerDNS pipe ABI version 2. After writing all of the responses,
