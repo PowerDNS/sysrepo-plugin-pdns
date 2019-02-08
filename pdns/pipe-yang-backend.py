@@ -20,7 +20,7 @@ import sysrepo as sr
 import logging
 import sys
 
-from typing import Union, List, Dict
+from typing import Union, List, Dict, Optional
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
@@ -240,6 +240,24 @@ class YANGBackend:
 
         return ret
 
+    def write_rrsets_from_trees(self, trees: Optional[sr.Trees]) -> None:
+        """
+        Writes all rrsets that are in the trees (which should all be rooted at zones/zone/rrset)
+        to PowerDNS.
+
+        :param sr.Trees trees:
+        :return:
+        """
+        if not trees:
+            self.write_line('END')
+            return
+
+        for i in range(trees.tree_cnt()):
+            rrset = self.get_rrset_from_tree(trees.tree(i))
+            self.write_rrset(rrset)
+
+        self.write_line("END")
+
     def handle_record_query(self, qname: str, qtype: str) -> None:
         """
         Retrieve DNS records from the datastore and write them to stdout using
@@ -281,16 +299,7 @@ class YANGBackend:
         log.debug('Attempting to get subtrees for: {}'.format(record_xpath))
 
         trees = self.session.get_subtrees(record_xpath)  # type: sr.Trees
-
-        if not trees:
-            self.write_line('END')
-            return
-
-        for i in range(trees.tree_cnt()):
-            rrset = self.get_rrset_from_tree(trees.tree(i))
-            self.write_rrset(rrset)
-
-        self.write_line("END")
+        self.write_rrsets_from_trees(trees)
 
     def handle_axfr_query(self, domain: str) -> None:
         """
@@ -303,24 +312,12 @@ class YANGBackend:
             self.write_line('FAIL')
             return
 
-        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
+        record_xpath = '{zone_xpath}[domain="{domain}"]/rrset'.format(
                 zone_xpath=self.zone_xpath,
                 domain=domain)
 
-        tree = self.session.get_subtree(record_xpath)
-        rrsets = tree.first_child()
-
-        # Iterate over all nodes underneath the /zone node
-        while rrsets:
-            if rrsets.name() != 'rrset':
-                # ignore everything that is not an rrset node
-                rrsets = rrsets.next()
-                continue
-
-            rrset = self.get_rrset_from_tree(rrsets)
-            self.write_rrset(rrset)
-            rrsets = rrsets.next()
-        self.write_line('END')
+        trees = self.session.get_subtrees(record_xpath)  # type: sr.Trees
+        self.write_rrsets_from_trees(trees)
 
 def main():
     be = YANGBackend()
