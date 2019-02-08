@@ -20,7 +20,7 @@ import sysrepo as sr
 import logging
 import sys
 
-from typing import Union, List
+from typing import Union, List, Dict
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
@@ -99,15 +99,7 @@ class YANGBackend:
 
             qname = qname.lower()
 
-            # FIXME: clarify list of record types
-            record_types = ["SOA", "NS", "A", "AAAA", "MX", "CNAME", "TXT"]
-
-            if qtype == "ANY":
-                self.handle_record_query(qname, qclass, record_types)
-            elif qtype in record_types:
-                self.handle_record_query(qname, qclass, [qtype])
-            else:
-                self.write_line("END")
+            self.handle_record_query(qname, qclass, qtype)
 
     @staticmethod
     def write_line(line: str, flush=True):
@@ -200,7 +192,43 @@ class YANGBackend:
 
         return None
 
-    def handle_record_query(self, qname: str, qclass: str, qtypes: List[str]) -> None:
+    @staticmethod
+    def get_rrset_from_tree(tree: sr.Tree) -> Dict:
+        """
+        Returns the rrset
+
+        :param sr.Tree tree: A tree rooted at zones/zone/rrset
+        :return: A dictionary with the rrset as described in the tree, e.g.:
+            {
+               'owner': 'www.example.com',
+               'ttl': 2400,
+               'type': 'A',
+               'rdata': ['192.0.2.15', '203.0.113.4']
+            }
+        """
+        ret = dict()
+
+        tree_rrset_vals = tree.first_child()  # type: sr.Tree
+        while tree_rrset_vals:
+            if tree_rrset_vals.name() == 'rdata':
+                if not ret.get(tree_rrset_vals.name()):
+                    ret[tree_rrset_vals.name()] = list()
+                ret[tree_rrset_vals.name()].append(tree_rrset_vals.data().get_string())
+                tree_rrset_vals = tree_rrset_vals.next()
+                continue
+
+            if tree_rrset_vals.type() == sr.SR_UINT32_T:
+                ret[tree_rrset_vals.name()] = tree_rrset_vals.data().get_uint32()
+            if tree_rrset_vals.type() == sr.SR_ENUM_T:
+                ret[tree_rrset_vals.name()] = tree_rrset_vals.data().get_enum()
+            if tree_rrset_vals.type() == sr.SR_STRING_T:
+                ret[tree_rrset_vals.name()] = tree_rrset_vals.data().get_string()
+
+            tree_rrset_vals = tree_rrset_vals.next()
+
+        return ret
+
+    def handle_record_query(self, qname: str, qclass: str, qtype: str) -> None:
         """
         Retrieve DNS records from the datastore and write them to stdout using
         the PowerDNS pipe ABI version 2. After writing all of the responses,
@@ -211,8 +239,7 @@ class YANGBackend:
 
         :param str qname: DNS resource name
         :param str qclass: DNS class
-        :param List[str] qtypes: List of DNS record types to retrieve.
-            A separate XPath lookup will be performed for each record type.
+        :param str qtype: The type of record to retrieve
         :return: None
         """
 
@@ -228,43 +255,41 @@ class YANGBackend:
             self.write_line("END")
             return
 
-        # TODO return the SOA from self.get_domain and send it to pdns when the
-        # qtype is SOA
+        # TODO return the SOA from self.get_domain and send it to pdns when qtype is SOA
 
-        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
+        record_xpath = '{zone_xpath}[domain="{domain}"]/rrset[owner="{qname}"]'.format(
                 zone_xpath=self.zone_xpath,
-                domain=domain)
+                domain=domain,
+                qname=qname)
 
-        # FIXME: we can probably do this all in one XPath query if we're clever
-        #        about it
-        for qtype in qtypes:
-            select_xpath = '{record_xpath}/rrset[type="{qtype}"][owner="{qname}"]/rdata[text()]'.format(
+        if qtype != 'ANY':
+            record_xpath = '{record_xpath}[type="{qtype}"]'.format(
                     record_xpath=record_xpath,
-                    qname=qname,
                     qtype=qtype)
 
-            # FIXME: stub/mock for unit testing (this seems like the right
-            #        place to do it).
-            values = self.get_config_data(select_xpath)
+        log.debug('Attempting to get subtrees for: {}'.format(record_xpath))
 
-            if not values:
-                continue
+        trees = self.session.get_subtrees(record_xpath)  # type: sr.Trees
 
-            # FIXME: get TTL from rrset
-            for i in range(values.val_cnt()):
-                if self.abi_version == 2:
-                    self.write_line('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
-                            qname=qname, qclass=qclass, qtype=qtype,
-                            ttl=3600, id=-1, content=values.val(i).val_to_string()), False)
+        if trees.tree_cnt() == 0:
+            self.write_line('END')
+            return
 
+        for i in range(trees.tree_cnt()):
+            rrset = self.get_rrset_from_tree(trees.tree(i))
+
+            for rdata in rrset['rdata']:
                 if self.abi_version == 4:
                     # TODO: figure out the auth field
-                    self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
-                            qname=qname, qclass=qclass, qtype=qtype,
-                            ttl=3600, id=-1, content=values.val(i).val_to_string()), False)
+                    self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
+                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
+                        ttl=rrset['ttl'], id=-1, content=rdata), False)
+                if self.abi_version == 2:
+                    self.write_line('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
+                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
+                        ttl=rrset['ttl'], id=-1, content=rdata), False)
 
         self.write_line("END")
-        return
 
     def handle_axfr_query(self, domain: str) -> None:
         """
@@ -310,7 +335,7 @@ class YANGBackend:
 
             for rdata in rrset['rdata']:
                 # Only ABI v4 supports AXFR, no need to send v2 lines
-                self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
                         qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
                         ttl=rrset['ttl'], id=-1, content=rdata), False)
 
