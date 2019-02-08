@@ -95,8 +95,7 @@ class YANGBackend:
                 self.write_line('FAIL')
                 continue
 
-            kind, qname, qclass, qtype, zoneid, *ipinfo = request
-
+            kind, qname, _, qtype, *_ = request
             qname = qname.lower()
 
             self.handle_record_query(qname, qtype)
