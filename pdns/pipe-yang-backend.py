@@ -73,13 +73,11 @@ class YANGBackend:
 
         :return: Should never happen
         """
-        hadHelo = False
         for line in sys.stdin:
             line = line.strip()
             log.debug('Had line from PowerDNS: %s', line)
-            if not hadHelo:
+            if self.abi_version == 0:
                 self.handle_helo(line)
-                hadHelo = True
                 continue
 
             request = line.split('\t')
