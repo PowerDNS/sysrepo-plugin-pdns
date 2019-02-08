@@ -26,6 +26,7 @@ The `IETF <https://ietf.org>`__ has standardized :rfc:`YANG <6020>` and :rfc:`NE
    intro/why
    models/intro
    sysrepo/intro
+   setting-up/index
 
 Indices and tables
 ==================

@@ -20,7 +20,7 @@ import sysrepo as sr
 import logging
 import sys
 
-from typing import Union, List
+from typing import Union, List, Dict, Optional
 
 logging.basicConfig(level=logging.DEBUG)
 log = logging.getLogger()
@@ -73,13 +73,11 @@ class YANGBackend:
 
         :return: Should never happen
         """
-        hadHelo = False
         for line in sys.stdin:
             line = line.strip()
             log.debug('Had line from PowerDNS: %s', line)
-            if not hadHelo:
+            if self.abi_version == 0:
                 self.handle_helo(line)
-                hadHelo = True
                 continue
 
             request = line.split('\t')
@@ -95,31 +93,40 @@ class YANGBackend:
                 self.write_line('FAIL')
                 continue
 
-            kind, qname, qclass, qtype, zoneid, *ipinfo = request
-
+            kind, qname, _, qtype, *_ = request
             qname = qname.lower()
 
-            # FIXME: clarify list of record types
-            record_types = ["SOA", "NS", "A", "AAAA", "MX", "CNAME", "TXT"]
+            self.handle_record_query(qname, qtype)
 
-            if qtype == "ANY":
-                self.handle_record_query(qname, qclass, record_types)
-            elif qtype in record_types:
-                self.handle_record_query(qname, qclass, [qtype])
-            else:
-                self.write_line("END")
-
-    def write_line(self, line: str):
+    @staticmethod
+    def write_line(line: str, flush=True):
         """
-        Writes ``line`` to stdout and flushes stdout
+        Writes ``line`` to stdout and flushes stdout when flush is True
 
         :param str line: The full line to write to stdout
+        :param bool flush: Whether or not to flush stdout after writing
         :return: None
         """
         log.debug("Sending line to PowerDNS: %s", line)
         sys.stdout.write(line)
         sys.stdout.write('\n')
-        sys.stdout.flush()
+        if flush:
+            sys.stdout.flush()
+
+    def write_rrset(self, rrset: dict, auth: int = 1) -> None:
+        for rdata in rrset['rdata']:
+            to_write = '{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}'.format(
+                qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
+                ttl=rrset['ttl'], id=-1, content=rdata)
+            if self.abi_version == 4:
+                to_write = '{subnet_mask}\t{auth}\t{to_write}'.format(
+                    subnet_mask=0,
+                    auth=auth,
+                    to_write=to_write
+                )
+            self.write_line('DATA\t{to_write}'.format(
+                to_write=to_write
+            ))
 
     def handle_helo(self, line) -> None:
         """
@@ -176,6 +183,25 @@ class YANGBackend:
 
         return values
 
+    def get_subtrees(self, xpath: str) -> Optional[sr.Trees]:
+        log.info("Getting subtrees at '%s'", xpath)
+
+        try:
+            subtrees: sr.Trees = self.session.get_subtrees(xpath)
+        except RuntimeError as e:
+            log.warning("Could not retrieve subtrees for xpath '%s': %s", xpath, e)
+            return None
+
+        if log.level == logging.DEBUG:
+            if not subtrees:
+                log.debug('Path %s was empty', xpath)
+                return None
+            log.debug('Got these subtrees for %s', xpath)
+            for i in range(subtrees.tree_cnt()):
+                log.debug(subtrees.tree(i).to_string(3))
+
+            return subtrees
+
     def get_domain(self, qname: str) -> Union[None, str]:
         """
         Returns the domain name for the record at `qname`
@@ -197,7 +223,61 @@ class YANGBackend:
 
         return None
 
-    def handle_record_query(self, qname: str, qclass: str, qtypes: List[str]) -> None:
+    @staticmethod
+    def get_rrset_from_tree(tree: sr.Tree) -> Dict:
+        """
+        Returns the rrset
+
+        :param sr.Tree tree: A tree rooted at zones/zone/rrset
+        :return: A dictionary with the rrset as described in the tree, e.g.:
+            {
+               'owner': 'www.example.com',
+               'ttl': 2400,
+               'type': 'A',
+               'rdata': ['192.0.2.15', '203.0.113.4']
+            }
+        """
+        ret = dict()
+
+        tree_rrset_vals = tree.first_child()  # type: sr.Tree
+        while tree_rrset_vals:
+            if tree_rrset_vals.name() == 'rdata':
+                if not ret.get(tree_rrset_vals.name()):
+                    ret[tree_rrset_vals.name()] = list()
+                ret[tree_rrset_vals.name()].append(tree_rrset_vals.data().get_string())
+                tree_rrset_vals = tree_rrset_vals.next()
+                continue
+
+            if tree_rrset_vals.type() == sr.SR_UINT32_T:
+                ret[tree_rrset_vals.name()] = tree_rrset_vals.data().get_uint32()
+            if tree_rrset_vals.type() == sr.SR_ENUM_T:
+                ret[tree_rrset_vals.name()] = tree_rrset_vals.data().get_enum()
+            if tree_rrset_vals.type() == sr.SR_STRING_T:
+                ret[tree_rrset_vals.name()] = tree_rrset_vals.data().get_string()
+
+            tree_rrset_vals = tree_rrset_vals.next()
+
+        return ret
+
+    def write_rrsets_from_trees(self, trees: Optional[sr.Trees]) -> None:
+        """
+        Writes all rrsets that are in the trees (which should all be rooted at zones/zone/rrset)
+        to PowerDNS.
+
+        :param sr.Trees trees:
+        :return:
+        """
+        if not trees:
+            self.write_line('END')
+            return
+
+        for i in range(trees.tree_cnt()):
+            rrset = self.get_rrset_from_tree(trees.tree(i))
+            self.write_rrset(rrset)
+
+        self.write_line("END")
+
+    def handle_record_query(self, qname: str, qtype: str) -> None:
         """
         Retrieve DNS records from the datastore and write them to stdout using
         the PowerDNS pipe ABI version 2. After writing all of the responses,
@@ -207,9 +287,7 @@ class YANGBackend:
         pipe backend documentation at https://doc.powerdns.com/authoritative/backends/pipe.html
 
         :param str qname: DNS resource name
-        :param str qclass: DNS class
-        :param List[str] qtypes: List of DNS record types to retrieve.
-            A separate XPath lookup will be performed for each record type.
+        :param str qtype: The type of record to retrieve
         :return: None
         """
 
@@ -225,45 +303,22 @@ class YANGBackend:
             self.write_line("END")
             return
 
-        # TODO return the SOA from self.get_domain and send it to pdns when the
-        # qtype is SOA
+        # TODO return the SOA from self.get_domain and send it to pdns when qtype is SOA
 
-        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
+        record_xpath = '{zone_xpath}[domain="{domain}"]/rrset[owner="{qname}"]'.format(
                 zone_xpath=self.zone_xpath,
-                domain=domain)
+                domain=domain,
+                qname=qname)
 
-        # FIXME: we can probably do this all in one XPath query if we're clever
-        #        about it
-        for qtype in qtypes:
-            select_xpath = '{record_xpath}/rrset[type="{qtype}"][owner="{qname}"]/rdata[text()]'.format(
+        if qtype != 'ANY':
+            record_xpath = '{record_xpath}[type="{qtype}"]'.format(
                     record_xpath=record_xpath,
-                    qname=qname,
                     qtype=qtype)
 
-            # FIXME: stub/mock for unit testing (this seems like the right
-            #        place to do it).
-            values = self.get_config_data(select_xpath)
+        log.debug('Attempting to get subtrees for: {}'.format(record_xpath))
 
-            if not values:
-                continue
-
-            # FIXME: get TTL from rrset
-            for i in range(values.val_cnt()):
-                # not using `self.write_line()` here to avoid flushing after
-                # every line. we'll do that when we write END.
-                if self.abi_version == 2:
-                    sys.stdout.write('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
-                            qname=qname, qclass=qclass, qtype=qtype,
-                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
-
-                if self.abi_version == 4:
-                    # TODO: figure out the auth field
-                    sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
-                            qname=qname, qclass=qclass, qtype=qtype,
-                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
-
-        self.write_line("END")
-        return
+        trees = self.get_subtrees(record_xpath)
+        self.write_rrsets_from_trees(trees)
 
     def handle_axfr_query(self, domain: str) -> None:
         """
@@ -276,46 +331,12 @@ class YANGBackend:
             self.write_line('FAIL')
             return
 
-        record_xpath = '{zone_xpath}[domain="{domain}"]'.format(
+        record_xpath = '{zone_xpath}[domain="{domain}"]/rrset'.format(
                 zone_xpath=self.zone_xpath,
                 domain=domain)
 
-        tree = self.session.get_subtree(record_xpath)
-        rrsets = tree.first_child()
-
-        # Iterate over all nodes underneath the /zone node
-        while rrsets:
-            if rrsets.name() != 'rrset':
-                # ignore everything that is not an rrset node
-                rrsets = rrsets.next()
-                continue
-
-            rrset = dict()
-
-            # Iterate over all children of the rrset in the tree
-            rrset_val = rrsets.first_child()
-            while rrset_val:
-                if rrset_val.name() in ['ttl']:
-                    rrset[rrset_val.name()] = rrset_val.data().get_uint32()
-                if rrset_val.name() in ['owner']:
-                    rrset[rrset_val.name()] = rrset_val.data().get_string()
-                if rrset_val.name() in ['type']:
-                    rrset[rrset_val.name()] = rrset_val.data().get_enum()
-                if rrset_val.name() in ['rdata']:
-                    if not rrset.get(rrset_val.name()):
-                        rrset[rrset_val.name()] = list()
-                    rrset[rrset_val.name()].append(rrset_val.data().get_string())
-                rrset_val = rrset_val.next()
-
-            for rdata in rrset['rdata']:
-                # Only ABI v4 supports AXFR, no need to send v2 lines
-                sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
-                        qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
-                        ttl=rrset['ttl'], id=-1, content=rdata))
-
-            rrsets = rrsets.next()
-
-        self.write_line('END')
+        trees = self.get_subtrees(record_xpath)
+        self.write_rrsets_from_trees(trees)
 
 def main():
     be = YANGBackend()
