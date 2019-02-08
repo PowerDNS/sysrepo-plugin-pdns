@@ -109,17 +109,19 @@ class YANGBackend:
             else:
                 self.write_line("END")
 
-    def write_line(self, line: str):
+    def write_line(self, line: str, flush=True):
         """
-        Writes ``line`` to stdout and flushes stdout
+        Writes ``line`` to stdout and flushes stdout when flush is True
 
         :param str line: The full line to write to stdout
+        :param bool flush: Whether or not to flush stdout after writing
         :return: None
         """
         log.debug("Sending line to PowerDNS: %s", line)
         sys.stdout.write(line)
         sys.stdout.write('\n')
-        sys.stdout.flush()
+        if flush:
+            sys.stdout.flush()
 
     def handle_helo(self, line) -> None:
         """
@@ -249,18 +251,16 @@ class YANGBackend:
 
             # FIXME: get TTL from rrset
             for i in range(values.val_cnt()):
-                # not using `self.write_line()` here to avoid flushing after
-                # every line. we'll do that when we write END.
                 if self.abi_version == 2:
-                    sys.stdout.write('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                    self.write_line('DATA\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
                             qname=qname, qclass=qclass, qtype=qtype,
-                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
+                            ttl=3600, id=-1, content=values.val(i).val_to_string()), False)
 
                 if self.abi_version == 4:
                     # TODO: figure out the auth field
-                    sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                    self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
                             qname=qname, qclass=qclass, qtype=qtype,
-                            ttl=3600, id=-1, content=values.val(i).val_to_string()))
+                            ttl=3600, id=-1, content=values.val(i).val_to_string()), False)
 
         self.write_line("END")
         return
@@ -309,9 +309,9 @@ class YANGBackend:
 
             for rdata in rrset['rdata']:
                 # Only ABI v4 supports AXFR, no need to send v2 lines
-                sys.stdout.write('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
+                self.write_line('DATA\t0\t1\t{qname}\t{qclass}\t{qtype}\t{ttl}\t{id}\t{content}\n'.format(
                         qname=rrset['owner'], qclass='IN', qtype=rrset['type'],
-                        ttl=rrset['ttl'], id=-1, content=rdata))
+                        ttl=rrset['ttl'], id=-1, content=rdata), False)
 
             rrsets = rrsets.next()
 
