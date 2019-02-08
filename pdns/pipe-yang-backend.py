@@ -317,26 +317,9 @@ class YANGBackend:
                 rrsets = rrsets.next()
                 continue
 
-            rrset = dict()
-
-            # Iterate over all children of the rrset in the tree
-            rrset_val = rrsets.first_child()
-            while rrset_val:
-                if rrset_val.name() in ['ttl']:
-                    rrset[rrset_val.name()] = rrset_val.data().get_uint32()
-                if rrset_val.name() in ['owner']:
-                    rrset[rrset_val.name()] = rrset_val.data().get_string()
-                if rrset_val.name() in ['type']:
-                    rrset[rrset_val.name()] = rrset_val.data().get_enum()
-                if rrset_val.name() in ['rdata']:
-                    if not rrset.get(rrset_val.name()):
-                        rrset[rrset_val.name()] = list()
-                    rrset[rrset_val.name()].append(rrset_val.data().get_string())
-                rrset_val = rrset_val.next()
-
+            rrset = self.get_rrset_from_tree(rrsets)
             self.write_rrset(rrset)
             rrsets = rrsets.next()
-
         self.write_line('END')
 
 def main():
