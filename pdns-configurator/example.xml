@@ -1,0 +1,16 @@
+<dns-server xmlns="http://www.nic.cz/ns/yang/dns-slave-server">
+	<remote-server>
+		<name>server1</name>
+		<remote>
+			<ip-address>127.0.0.1</ip-address>
+			<port>5300</port>
+		</remote>
+	</remote-server>
+	<zones>
+		<zone>
+			<domain>example.net</domain>
+			<role>slave</role>
+			<master>server1</master>
+		</zone>
+	</zones>
+</dns-server>
